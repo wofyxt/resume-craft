@@ -4,13 +4,16 @@ import { useAuth } from '../context/AuthContext';
 import Header from '../components/Header';
 import Footer from '../components/Footer';
 import './Dashboard.css';
+import CoverLettersManager from '../components/CoverLettersManager';
 // 🔥 Добавь этот импорт
 import ResumeList from '../components/ResumeList';
+import ResumeShareManager from '../components/ResumeShareManager';
 
 const Dashboard = () => {
   const { user, logout, updateAvatar, removeAvatar } = useAuth();
   const navigate = useNavigate();
   const [activeSection, setActiveSection] = useState('profile');
+  const [showShareModal, setShowShareModal] = useState(null);
 
   // 🔹 Состояния для аватара
   const [isUploading, setIsUploading] = useState(false);
@@ -125,6 +128,7 @@ const [isDeleting, setIsDeleting] = useState(false);
         <div style={{ padding: '60px 20px', textAlign: 'center' }}>
           <p>Загрузка данных профиля...</p>
         </div>
+        
         <Footer />
       </div>
     );
@@ -212,6 +216,12 @@ const handleDeleteAccount = async () => {
                 >
                   <i className="fas fa-cog"></i> Настройки
                 </li>
+                <li 
+  className={activeSection === 'coverLetters' ? 'active' : ''}
+  onClick={() => setActiveSection('coverLetters')}
+>
+  <i className="fas fa-envelope-open-text"></i> Сопроводительные
+</li>
               </ul>
             </nav>
           </aside>
@@ -395,7 +405,7 @@ const handleDeleteAccount = async () => {
                 <div className="resumes-list">
                   <h2>Мои резюме</h2>
                   <div className="resume-cards">
-        <ResumeList userId={user?.id} /> {/* 🔥 Новый компонент */}
+        <ResumeList userId={user?.id}  onShare={(id) => setShowShareModal(id)}/> {/* 🔥 Новый компонент */}
       </div>
                 </div>
               </div>
@@ -408,7 +418,15 @@ const handleDeleteAccount = async () => {
                 <p>Функционал настроек будет добавлен позже.</p>
               </div>
             )}
+
+            {activeSection === 'coverLetters' && <CoverLettersManager />}
           </main>
+          {showShareModal && (
+  <ResumeShareManager 
+    resumeId={showShareModal} 
+    onClose={() => setShowShareModal(null)} 
+  />
+)}
         </div>
       </div>
 

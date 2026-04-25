@@ -595,18 +595,53 @@ app.get('/api/resumes', requireAuth, async (req, res) => {
     res.status(500).json({ error: 'Ошибка загрузки списка' });
   }
 });
-// Запуск сервера
-const PORT = process.env.PORT || 3001;
-// 🖼️ Раздача загруженных аватаров
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-app.listen(PORT, async () => {
+
+// 📝 COVER LETTERS ROUTES
+app.get('/api/cover-letters', requireAuth, async (req, res) => {
   try {
-    await pool.query('SELECT 1');
-    console.log('✅ PostgreSQL подключен');
-    console.log(`🚀 Сервер запущен на http://localhost:${PORT}`);
-  } catch (err) {
-    console.error('❌ Ошибка подключения к БД:', err.message);
-  }
+    const result = await pool.query(`
+      SELECT cl.id, cl.title, cl.resume_id, cl.updated_at, r.title as resume_title 
+      FROM cover_letters cl 
+      LEFT JOIN resumes r ON cl.resume_id = r.id 
+      WHERE cl.user_id = $1 
+      ORDER BY cl.updated_at DESC`, [req.userId]);
+    res.json(result.rows);
+  } catch (err) { res.status(500).json({ error: 'Ошибка загрузки писем' }); }
+});
+
+app.post('/api/cover-letters', requireAuth, async (req, res) => {
+  try {
+    const { title, content, resume_id } = req.body;
+    if (!title || !content) return res.status(400).json({ error: 'Заголовок и текст обязательны' });
+    
+    const result = await pool.query(`
+      INSERT INTO cover_letters (user_id, resume_id, title, content) 
+      VALUES ($1, $2, $3, $4) RETURNING *`, 
+      [req.userId, resume_id || null, title, content]);
+    res.status(201).json(result.rows[0]);
+  } catch (err) { res.status(500).json({ error: 'Ошибка сохранения письма' }); }
+});
+
+app.put('/api/cover-letters/:id', requireAuth, async (req, res) => {
+  try {
+    const { title, content, resume_id } = req.body;
+    const result = await pool.query(`
+      UPDATE cover_letters 
+      SET title = $1, content = $2, resume_id = $3, updated_at = NOW() 
+      WHERE id = $4 AND user_id = $5 RETURNING *`, 
+      [title, content, resume_id || null, req.params.id, req.userId]);
+      
+    if (!result.rows.length) return res.status(404).json({ error: 'Письмо не найдено' });
+    res.json(result.rows[0]);
+  } catch (err) { res.status(500).json({ error: 'Ошибка обновления' }); }
+});
+
+app.delete('/api/cover-letters/:id', requireAuth, async (req, res) => {
+  try {
+    const result = await pool.query('DELETE FROM cover_letters WHERE id = $1 AND user_id = $2', [req.params.id, req.userId]);
+    if (result.rowCount === 0) return res.status(404).json({ error: 'Не найдено' });
+    res.json({ message: 'Удалено' });
+  } catch (err) { res.status(500).json({ error: 'Ошибка удаления' }); }
 });
 
 // 📄 ЗАГРУЗКА ОДНОГО РЕЗЮМЕ
@@ -622,3 +657,154 @@ app.get('/api/resumes/:id', requireAuth, async (req, res) => {
     res.status(500).json({ error: 'Ошибка загрузки резюме' });
   }
 });
+
+// 🔗 PUBLIC SHARE ROUTES
+
+// Создать публичную ссылку
+app.post('/api/resumes/:id/share', requireAuth, async (req, res) => {
+  try {
+    const { expiresAt, password } = req.body;
+    const resumeId = req.params.id;
+
+    // 🔐 Проверяем, что резюме принадлежит пользователю
+    const resumeCheck = await pool.query(
+      'SELECT id FROM resumes WHERE id = $1 AND user_id = $2',
+      [resumeId, req.userId]
+    );
+    if (!resumeCheck.rows.length) {
+      return res.status(404).json({ error: 'Резюме не найдено' });
+    }
+
+    // Генерируем уникальный slug (6 символов)
+    const generateSlug = () => Math.random().toString(36).substring(2, 8);
+    let slug = generateSlug();
+    
+    // Проверяем уникальность (маловероятно, но на всякий случай)
+    let exists = await pool.query('SELECT id FROM resume_shares WHERE slug = $1', [slug]);
+    while (exists.rows.length > 0) {
+      slug = generateSlug();
+      exists = await pool.query('SELECT id FROM resume_shares WHERE slug = $1', [slug]);
+    }
+
+    // Хэшируем пароль, если есть
+    const passwordHash = password ? await bcrypt.hash(password, 10) : null;
+
+    const result = await pool.query(
+      `INSERT INTO resume_shares (resume_id, slug, expires_at, password_hash) 
+       VALUES ($1, $2, $3, $4) RETURNING slug, expires_at`,
+      [resumeId, slug, expiresAt || null, passwordHash]
+    );
+
+    res.status(201).json({ 
+      link: `/s/${slug}`, 
+      slug: result.rows[0].slug,
+      expiresAt: result.rows[0].expires_at 
+    });
+  } catch (err) {
+    console.error('Share create error:', err);
+    res.status(500).json({ error: 'Ошибка создания ссылки' });
+  }
+});
+
+// Получить список активных шар для резюме
+app.get('/api/resumes/:id/shares', requireAuth, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT id, slug, expires_at, views_count, created_at 
+       FROM resume_shares 
+       WHERE resume_id = $1 
+       ORDER BY created_at DESC`,
+      [req.params.id]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: 'Ошибка загрузки ссылок' });
+  }
+});
+
+// Удалить публичную ссылку
+app.delete('/api/resumes/shares/:slug', requireAuth, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `DELETE FROM resume_shares 
+       WHERE slug = $1 
+       AND resume_id IN (SELECT id FROM resumes WHERE user_id = $2)`,
+      [req.params.slug, req.userId]
+    );
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: 'Ссылка не найдена' });
+    }
+    res.json({ message: 'Ссылка удалена' });
+  } catch (err) {
+    res.status(500).json({ error: 'Ошибка удаления' });
+  }
+});
+
+// 🌐 ПУБЛИЧНЫЙ ДОСТУП (без авторизации!)
+app.get('/api/public/resume/:slug', async (req, res) => {
+  try {
+    const { slug, password } = req.query;
+
+    // Ищем шар
+    const share = await pool.query(
+      `SELECT s.*, r.data, r.template, r.title, u.name as author_name 
+       FROM resume_shares s
+       JOIN resumes r ON s.resume_id = r.id
+       JOIN users u ON r.user_id = u.id
+       WHERE s.slug = $1`,
+      [slug]
+    );
+
+    if (!share.rows.length) {
+      return res.status(404).json({ error: 'Ссылка недействительна' });
+    }
+
+    const s = share.rows[0];
+
+    // 🔐 Проверка пароля, если установлен
+    if (s.password_hash) {
+      if (!password) {
+        return res.status(403).json({ error: 'Требуется пароль', requiresPassword: true });
+      }
+      const valid = await bcrypt.compare(password, s.password_hash);
+      if (!valid) {
+        return res.status(403).json({ error: 'Неверный пароль' });
+      }
+    }
+
+    // 🔥 Проверяем срок действия
+    if (s.expires_at && new Date(s.expires_at) < new Date()) {
+      return res.status(410).json({ error: 'Срок действия ссылки истёк' });
+    }
+
+    // Увеличиваем счётчик просмотров
+    await pool.query('UPDATE resume_shares SET views_count = views_count + 1 WHERE id = $1', [s.id]);
+
+    // Возвращаем данные резюме (без чувствительной информации)
+    res.json({
+      title: s.title,
+      template: s.template,
+      data: s.data,
+      author: s.author_name,
+      views: s.views_count
+    });
+
+  } catch (err) {
+    console.error('Public resume error:', err);
+    res.status(500).json({ error: 'Ошибка загрузки резюме' });
+  }
+});
+// Запуск сервера
+const PORT = process.env.PORT || 3001;
+// 🖼️ Раздача загруженных аватаров
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+app.listen(PORT, async () => {
+  try {
+    await pool.query('SELECT 1');
+    console.log('✅ PostgreSQL подключен');
+    console.log(`🚀 Сервер запущен на http://localhost:${PORT}`);
+  } catch (err) {
+    console.error('❌ Ошибка подключения к БД:', err.message);
+  }
+});
+

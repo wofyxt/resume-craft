@@ -284,3 +284,170 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* Cover Letters Section */
+.cover-letters-section { max-width: 800px; margin: 0 auto; }
+.cover-letters-section h2 { margin-bottom: 20px; font-size: 24px; }
+
+.cl-form { background: #f8fafc; padding: 20px; border-radius: 12px; margin-bottom: 30px; display: flex; flex-direction: column; gap: 12px; }
+.cl-form input, .cl-form select, .cl-form textarea { padding: 10px; border: 1px solid #e2e8f0; border-radius: 8px; font-family: inherit; }
+.cl-form textarea { resize: vertical; }
+.cl-form-actions { display: flex; gap: 10px; margin-top: 10px; }
+
+.cl-list { display: flex; flex-direction: column; gap: 15px; }
+.cl-card { display: flex; justify-content: space-between; align-items: flex-start; padding: 15px; border: 1px solid #e2e8f0; border-radius: 10px; background: white; transition: 0.2s; }
+.cl-card:hover { box-shadow: 0 4px 12px var(--shadow); }
+.cl-info h3 { margin: 0 0 5px; font-size: 18px; }
+.cl-tag { display: inline-block; background: var(--primary-pastel); color: var(--highlight); font-size: 12px; padding: 2px 8px; border-radius: 20px; margin-bottom: 8px; }
+.cl-info p { color: #64748b; font-size: 14px; margin: 5px 0; line-height: 1.4; }
+.cl-info small { color: #94a3b8; }
+.cl-actions { display: flex; gap: 8px; flex-shrink: 0; }
+
+/* Share Modal */
+.share-modal-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.share-modal {
+  background: white;
+  border-radius: 16px;
+  padding: 24px;
+  width: 90%;
+  max-width: 480px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 40px rgba(0,0,0,0.15);
+  animation: slideUp 0.3s ease;
+}
+
+@keyframes slideUp {
+  from { transform: translateY(20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.share-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  padding-bottom: 15px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.share-header h3 { margin: 0; font-size: 20px; }
+
+.close-btn {
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: #64748b;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+.close-btn:hover { background: #f1f5f9; color: #1e293b; }
+
+.share-form {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  margin-bottom: 25px;
+  padding: 15px;
+  background: #f8fafc;
+  border-radius: 12px;
+}
+
+.share-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.share-form input {
+  padding: 10px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+.share-msg {
+  padding: 10px 14px;
+  border-radius: 8px;
+  margin-bottom: 15px;
+  font-size: 14px;
+}
+.share-msg.success { background: #dcfce7; color: #166534; }
+.share-msg.error { background: #fee2e2; color: #991b1b; }
+
+.shares-list h4 {
+  margin: 0 0 12px;
+  font-size: 16px;
+  color: #334155;
+}
+
+.share-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px;
+  background: #f8fafc;
+  border-radius: 10px;
+  margin-bottom: 10px;
+  border: 1px solid #e2e8f0;
+}
+
+.share-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.share-info code {
+  font-family: monospace;
+  background: #eef2ff;
+  padding: 2px 8px;
+  border-radius: 4px;
+  color: #4f46e5;
+  font-size: 13px;
+}
+
+.share-info small {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.share-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.btn-sm {
+  padding: 6px 10px;
+  font-size: 14px;
+  border-radius: 6px;
+  border: none;
+  background: #e2e8f0;
+  color: #334155;
+  cursor: pointer;
+  transition: 0.2s;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+}
+.btn-sm:hover { background: #cbd5e1; }
+.btn-sm.btn-danger { background: #fee2e2; color: #dc2626; }
+.btn-sm.btn-danger:hover { background: #fecaca; }
