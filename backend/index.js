@@ -459,32 +459,31 @@ app.get('/api/resumes', requireAuth, async (req, res) => {
 });
 
 app.post('/api/resumes', requireAuth, async (req, res) => {
-  const { title, data, template } = req.body;
-  const result = await pool.query(
-    'INSERT INTO resumes (user_id, title, data, template) VALUES ($1, $2, $3, $4) RETURNING id, title, data, template, updated_at AS "updatedAt"',
-    [req.userId, title || 'Без названия', data, template || 'modern']
-  );
-  await logActivity(req.userId, 'resume_create', 'resume', result.rows[0].id, { title: result.rows[0].title }, req);
-  res.status(201).json(result.rows[0]);
+  try {
+    const { title, data, template, profession_id } = req.body;
+    const result = await pool.query(
+      `INSERT INTO resumes (user_id, title, data, template, profession_id) 
+       VALUES ($1, $2, $3, $4, $5) 
+       RETURNING id, title, data, template, profession_id, updated_at AS "updatedAt"`,
+      [req.userId, title || 'Без названия', data, template || 'modern', profession_id || null]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (err) { res.status(500).json({ error: 'Ошибка сохранения резюме' }); }
 });
+
 
 app.put('/api/resumes/:id', requireAuth, async (req, res) => {
   try {
-    const { title, data, template } = req.body;
+    const { title, data, template, profession_id } = req.body;
     const result = await pool.query(
-      `UPDATE resumes SET title = $1, data = $2, template = $3, updated_at = NOW() WHERE id = $4 AND user_id = $5 RETURNING id, title, data, template, updated_at AS "updatedAt"`,
-      [title, data, template, req.params.id, req.userId]
+      `UPDATE resumes SET title = $1, data = $2, template = $3, profession_id = $4, updated_at = NOW() 
+       WHERE id = $5 AND user_id = $6 
+       RETURNING id, title, data, template, profession_id, updated_at AS "updatedAt"`,
+      [title, data, template, profession_id || null, req.params.id, req.userId]
     );
     if (!result.rows.length) return res.status(404).json({ error: 'Резюме не найдено' });
-    
-    // 🔥 Логирование обновления резюме
-    await logActivity(req.userId, 'resume_update', 'resume', req.params.id, { title }, req);
-    
     res.json(result.rows[0]);
-  } catch (err) {
-    console.error('Update resume error:', err);
-    res.status(500).json({ error: 'Ошибка обновления' });
-  }
+  } catch (err) { res.status(500).json({ error: 'Ошибка обновления' }); }
 });
 
 app.delete('/api/resumes/:id', requireAuth, async (req, res) => {
@@ -1096,6 +1095,185 @@ app.get('/api/public/resume/:slug', async (req, res) => {
     res.status(500).json({ error: 'Ошибка загрузки резюме' });
   }
 });
+
+// 📜 RESUME VERSIONING ROUTES
+
+// 1. Получить историю версий
+app.get('/api/resumes/:id/versions', requireAuth, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT id, version_number, title, created_at 
+       FROM resume_versions 
+       WHERE resume_id = $1 
+         AND resume_id IN (SELECT id FROM resumes WHERE user_id = $2)
+       ORDER BY created_at DESC`,
+      [req.params.id, req.userId]
+    );
+    res.json(result.rows);
+  } catch (err) { res.status(500).json({ error: 'Ошибка загрузки версий' }); }
+});
+
+// 2. Сохранить текущую версию
+app.post('/api/resumes/:id/save-version', requireAuth, async (req, res) => {
+  try {
+    const r = await pool.query('SELECT user_id, title, data, template FROM resumes WHERE id = $1', [req.params.id]);
+    if (!r.rows.length || r.rows[0].user_id !== req.userId) {
+      return res.status(404).json({ error: 'Резюме не найдено' });
+    }
+
+    const { title, data, template } = r.rows[0];
+    const nextVer = await pool.query(
+      `SELECT COALESCE(MAX(version_number), 0) + 1 as next_ver FROM resume_versions WHERE resume_id = $1`,
+      [req.params.id]
+    );
+    const versionNumber = nextVer.rows[0].next_ver;
+
+    await pool.query(
+      `INSERT INTO resume_versions (resume_id, version_number, title, data, template) 
+       VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+      [req.params.id, versionNumber, title, data, template]
+    );
+
+    await logActivity(req.userId, 'resume_version_save', 'resume', req.params.id, { version: versionNumber }, req);
+    res.status(201).json({ message: 'Версия сохранена', versionNumber });
+  } catch (err) { res.status(500).json({ error: 'Ошибка сохранения версии' }); }
+});
+
+// 3. Восстановить версию
+app.post('/api/resumes/:id/versions/:verId/restore', requireAuth, async (req, res) => {
+  try {
+    const v = await pool.query(
+      `SELECT v.data, v.title, v.template, v.version_number 
+       FROM resume_versions v 
+       JOIN resumes r ON v.resume_id = r.id 
+       WHERE v.id = $1 AND v.resume_id = $2 AND r.user_id = $3`,
+      [req.params.verId, req.params.id, req.userId]
+    );
+    if (!v.rows.length) return res.status(404).json({ error: 'Версия не найдена' });
+
+    const { data, title, template, version_number } = v.rows[0];
+    await pool.query(
+      `UPDATE resumes SET data = $1, title = $2, template = $3, updated_at = NOW() WHERE id = $4`,
+      [data, title, template, req.params.id]
+    );
+
+    // Создаём запись о восстановлении как новую версию
+    const nextVer = await pool.query(`SELECT COALESCE(MAX(version_number), 0) + 1 as next_ver FROM resume_versions WHERE resume_id = $1`, [req.params.id]);
+    await pool.query(
+      `INSERT INTO resume_versions (resume_id, version_number, title, data, template) VALUES ($1, $2, $3, $4, $5)`,
+      [req.params.id, nextVer.rows[0].next_ver, `${title} (Восстановлено из v${version_number})`, data, template]
+    );
+
+    await logActivity(req.userId, 'resume_version_restore', 'resume', req.params.id, { restored_from: version_number }, req);
+    res.json({ message: 'Резюме восстановлено' });
+  } catch (err) { res.status(500).json({ error: 'Ошибка восстановления' }); }
+});
+
+// ❤️ FAVORITE TEMPLATES ROUTES
+
+// Получить избранные шаблоны пользователя
+app.get('/api/favorites', requireAuth, async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT t.id, t.name, t.css_class, t.preview_url, tf.created_at
+      FROM template_favorites tf
+      JOIN templates t ON tf.template_id = t.id  -- 🔥 джойним по числовому ID
+      WHERE tf.user_id = $1
+      ORDER BY tf.created_at DESC`, 
+      [req.userId]
+    );
+    res.json(result.rows || []);
+  } catch (err) {
+    console.error('Get favorites error:', err);
+    res.status(500).json({ error: 'Ошибка загрузки избранных', details: err.message });
+  }
+});
+
+// Добавить в избранное
+app.post('/api/favorites', requireAuth, async (req, res) => {
+  try {
+    const { templateId } = req.body; // 🔥 Это css_class: 'modern', 'classic'...
+    if (!templateId) return res.status(400).json({ error: 'ID шаблона обязателен' });
+    
+    // 🔥 1. Сначала находим реальный числовой ID шаблона по css_class
+    const tpl = await pool.query(
+      'SELECT id FROM templates WHERE css_class = $1', 
+      [templateId]
+    );
+    
+    if (!tpl.rows.length) {
+      return res.status(404).json({ error: 'Шаблон не найден' });
+    }
+    
+    const realTemplateId = tpl.rows[0].id;
+    
+    // 🔥 2. Теперь вставляем в избранное уже числовой ID
+    const result = await pool.query(`
+      INSERT INTO template_favorites (user_id, template_id)
+      VALUES ($1, $2) ON CONFLICT (user_id, template_id) DO NOTHING
+      RETURNING id`, 
+      [req.userId, realTemplateId]
+    );
+      
+    res.status(201).json({ 
+      message: result.rows.length ? 'Добавлено в избранное' : 'Уже в избранном' 
+    });
+  } catch (err) { 
+    console.error('Add favorite error:', err);
+    res.status(500).json({ error: 'Ошибка сохранения', details: err.message }); 
+  }
+});
+
+// Удалить из избранного
+app.delete('/api/favorites/:cssClass', requireAuth, async (req, res) => {
+  try {
+    // 🔥 1. Находим ID шаблона по css_class
+    const tpl = await pool.query(
+      'SELECT id FROM templates WHERE css_class = $1', 
+      [req.params.cssClass]
+    );
+    
+    if (!tpl.rows.length) {
+      return res.status(404).json({ error: 'Шаблон не найден' });
+    }
+    
+    // 🔥 2. Удаляем по числовому ID
+    await pool.query(
+      'DELETE FROM template_favorites WHERE user_id = $1 AND template_id = $2',
+      [req.userId, tpl.rows[0].id]
+    );
+    
+    res.json({ message: 'Удалено из избранного' });
+  } catch (err) {
+    console.error('Remove favorite error:', err);
+    res.status(500).json({ error: 'Ошибка удаления', details: err.message });
+  }
+});
+
+// 🎓 СПИСОК ПРОФЕССИЙ
+app.get('/api/professions', requireAuth, async (req, res) => {
+  try {
+    const result = await pool.query('SELECT id, name FROM professions ORDER BY name');
+    res.json(result.rows);
+  } catch (err) { res.status(500).json({ error: 'Ошибка загрузки профессий' }); }
+});
+
+// 📊 СТАТИСТИКА ПО ПРОФЕССИЯМ
+app.get('/api/admin/profession-stats', requireAdmin, async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT p.name, 
+             COUNT(DISTINCT r.user_id) as user_count, 
+             COUNT(r.id) as resume_count
+      FROM professions p
+      LEFT JOIN resumes r ON p.id = r.profession_id
+      GROUP BY p.id, p.name
+      ORDER BY user_count DESC
+    `);
+    res.json(result.rows);
+  } catch (err) { res.status(500).json({ error: 'Ошибка статистики' }); }
+});
+
 // Запуск сервера
 const PORT = process.env.PORT || 3001;
 // 🖼️ Раздача загруженных аватаров

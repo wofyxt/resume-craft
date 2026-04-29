@@ -451,3 +451,12 @@
 .btn-sm:hover { background: #cbd5e1; }
 .btn-sm.btn-danger { background: #fee2e2; color: #dc2626; }
 .btn-sm.btn-danger:hover { background: #fecaca; }
+
+.btn-danger {
+  background: #fee2e2;
+  color: #dc2626;
+}
+.btn-danger:hover {
+  background: #dc2626;
+  color: #fff;
+}

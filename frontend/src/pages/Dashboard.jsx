@@ -9,18 +9,20 @@ import CoverLettersManager from '../components/CoverLettersManager';
 import ResumeList from '../components/ResumeList';
 import ResumeShareManager from '../components/ResumeShareManager';
 import ReviewForm from '../components/ReviewForm';
+import FavoriteTemplates from '../components/FavoriteTemplates';
+
 
 const Dashboard = () => {
   const { user, logout, updateAvatar, removeAvatar } = useAuth();
   const navigate = useNavigate();
   const [activeSection, setActiveSection] = useState('profile');
   const [showShareModal, setShowShareModal] = useState(null);
-
+const [form, setForm] = useState({ id: null });
   // 🔹 Состояния для аватара
   const [isUploading, setIsUploading] = useState(false);
   const [avatarMessage, setAvatarMessage] = useState('');
   const [avatarError, setAvatarError] = useState('');
-
+const [editingReview, setEditingReview] = useState(null);
   // 🔹 Состояния для формы профиля
   const [editUsername, setEditUsername] = useState('');
   const [editEmail, setEditEmail] = useState('');
@@ -127,21 +129,6 @@ const [userReviews, setUserReviews] = useState([]);
 
   // В Dashboard.jsx, после других функций (например, после handleLogout):
 
-const fetchUserReviews = async () => {
-  try {
-    const res = await fetch('/api/reviews/me', { credentials: 'include' });
-    if (res.ok) setUserReviews(await res.json());
-  } catch (err) {
-    console.error('Failed to fetch reviews:', err);
-  }
-};
-
-// Вызываем при монтировании компонента или переключении секции:
-useEffect(() => {
-  if (activeSection === 'reviews') {
-    fetchUserReviews();
-  }
-}, [activeSection]);
 
   // Если пользователь не загружен — показываем загрузку
   if (!user) {
@@ -179,7 +166,20 @@ const handleDeleteAccount = async () => {
   } finally {
     setIsDeleting(false);
   }
+}; const fetchUserReviews = async () => {
+  try {
+    const res = await fetch('/api/reviews/me', { credentials: 'include' });
+    if (res.ok) setUserReviews(await res.json());
+  } catch (err) {
+    console.error('Failed to fetch reviews:', err);
+  }
 };
+
+useEffect(() => {
+  if (activeSection === 'reviews') {
+    fetchUserReviews();
+  }
+}, [activeSection]);
   return (
     <div className="dashboard-container">
       <Header />
@@ -251,6 +251,12 @@ const handleDeleteAccount = async () => {
   onClick={() => setActiveSection('reviews')}
 >
   <i className="fas fa-star"></i> Мои отзывы
+</li>
+<li 
+  className={activeSection === 'favorites' ? 'active' : ''}
+  onClick={() => setActiveSection('favorites')}
+>
+  <i className="fas fa-heart"></i> Избранные шаблоны
 </li>
               </ul>
             </nav>
@@ -466,10 +472,11 @@ const handleDeleteAccount = async () => {
     {showReviewForm && (
       <div style={{ marginBottom: '30px' }}>
         <ReviewForm 
-          existingReview={userReviews.find(r => r.status !== 'rejected')}
-          onSuccess={() => {
-            setShowReviewForm(false);
-            fetchUserReviews();
+          existingReview={editingReview} // 🔥 Передаём именно тот, который редактируем
+  onSuccess={() => {
+    setShowReviewForm(false);
+    setEditingReview(null); // 🔥 Сбрасываем
+    fetchUserReviews();
           }}
         />
       </div>
@@ -525,7 +532,7 @@ const handleDeleteAccount = async () => {
                 {review.status !== 'rejected' && (
                   <button 
                     onClick={() => {
-                      setForm({ ...form, id: review.id });
+                      setEditingReview(review); 
                       setShowReviewForm(true);
                     }}
                     className="btn-sm"
@@ -543,6 +550,7 @@ const handleDeleteAccount = async () => {
   </div>
 )}
             {activeSection === 'coverLetters' && <CoverLettersManager />}
+            {activeSection === 'favorites' && <FavoriteTemplates />}
           </main>
           {showShareModal && (
   <ResumeShareManager 

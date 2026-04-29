@@ -8,14 +8,18 @@ import ResumePreview from '../components/ResumePreview';
 import './Editor.css';
 import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } from 'docx';
 import { saveAs } from 'file-saver';
+import ResumeVersionHistory from '../components/ResumeVersionHistory';
 
 const Editor = () => {
   const { resumeId } = useParams();
   const [showExportMenu, setShowExportMenu] = useState(false);
   const navigate = useNavigate();
   const [selectedTemplate, setSelectedTemplate] = useState('modern');
+  const [professions, setProfessions] = useState([]);
+const [selectedProfession, setSelectedProfession] = useState('');
+  const [favoriteTemplates, setFavoriteTemplates] = useState([]);
   const [previewVisible, setPreviewVisible] = useState(true);
-
+const [showVersionHistory, setShowVersionHistory] = useState(false);
   const { register, control, handleSubmit, setValue, watch, getValues,formState: { errors } } = useForm({
     defaultValues: {
       personal: {
@@ -56,6 +60,7 @@ const Editor = () => {
         });
       }
       if (resume.template) setSelectedTemplate(resume.template);
+      if (resume.profession_id) setSelectedProfession(resume.profession_id);
     } catch (err) {
       console.error('Load error:', err);
       alert('❌ Ошибка загрузки резюме');
@@ -64,6 +69,26 @@ const Editor = () => {
   };
 
   loadResume();
+
+  // Загрузка избранных шаблонов
+const fetchFavorites = async () => {
+  try {
+    const res = await fetch('/api/favorites', { credentials: 'include' });
+    if (res.ok) {
+      const data = await res.json();
+      // Сохраняем только css_class для быстрой проверки
+      setFavoriteTemplates(data.map(f => f.css_class));
+    }
+  } catch (e) {
+    console.error('Failed to load favorites:', e);
+  }
+};
+
+fetchFavorites();
+// Загрузка списка профессий
+fetch('/api/professions', { credentials: 'include' })
+  .then(r => r.json())
+  .then(setProfessions);
 }, [resumeId, setValue, navigate]);
 
  const onSubmit = async (data) => {
@@ -73,6 +98,7 @@ const Editor = () => {
       title: data.personal.fullName || 'Без названия',
       data,
       template: selectedTemplate,
+      profession_id: selectedProfession || null, // 🔥 Добавлено
     };
 
     const url = resumeId && resumeId !== 'new' 
@@ -245,6 +271,39 @@ const doc = new Document({
     alert('Не удалось создать файл. Проверьте консоль.');
   }
 };
+
+// ❤️ Переключение шаблона в избранном
+const toggleFavorite = async (cssClass, e) => {
+  e.stopPropagation(); // Чтобы не срабатывало переключение шаблона
+  
+  const isFav = favoriteTemplates.includes(cssClass);
+  
+  try {
+    const method = isFav ? 'DELETE' : 'POST';
+    const url = isFav 
+      ? `/api/favorites/${cssClass}` 
+      : '/api/favorites';
+    
+    const body = !isFav ? JSON.stringify({ templateId: cssClass }) : undefined;
+    
+    const res = await fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body
+    });
+    
+    if (res.ok) {
+      setFavoriteTemplates(prev => 
+        isFav 
+          ? prev.filter(c => c !== cssClass) 
+          : [...prev, cssClass]
+      );
+    }
+  } catch (err) {
+    console.error('Toggle favorite error:', err);
+  }
+};
   return (
     <>
       <Header />
@@ -266,7 +325,13 @@ const doc = new Document({
     <i className="fas fa-download" style={{ marginRight: '6px' }}></i>
     Экспорт
   </button>
-  
+  <button 
+  onClick={() => setShowVersionHistory(true)} 
+  className="btn btn-outline"
+  style={{ background: '#fff', border: '1px solid #cbd5e1' }}
+>
+  📜 Версии
+</button>
   {showExportMenu && (
     <div className="export-dropdown">
       <button 
@@ -312,6 +377,18 @@ const doc = new Document({
                       <label>Должность</label>
                       <input {...register('personal.title')} />
                     </div>
+                    <div className="form-group">
+  <label>Профессия / Специализация</label>
+  <select 
+    value={selectedProfession} 
+    onChange={(e) => setSelectedProfession(e.target.value)}
+  >
+    <option value="">Не выбрано</option>
+    {professions.map(p => (
+      <option key={p.id} value={p.id}>{p.name}</option>
+    ))}
+  </select>
+</div>
                     <div className="form-group">
                       <label>Email *</label>
                      <input 
@@ -505,7 +582,33 @@ const doc = new Document({
     <div 
       className={`template-option ${selectedTemplate === 'modern' ? 'active' : ''}`} 
       onClick={() => setSelectedTemplate('modern')}
-    >
+      style={{ position: 'relative' }} // 🔥 Важно для позиционирования кнопки
+    > 
+     <button
+      type="button"
+    onClick={(e) => toggleFavorite('modern', e)}
+    style={{
+      position: 'absolute',
+      top: '10px',
+      right: '10px',
+      background: favoriteTemplates.includes('modern') ? '#fee2e2' : 'rgba(255,255,255,0.9)',
+      border: 'none',
+      borderRadius: '50%',
+      width: '32px',
+      height: '32px',
+      fontSize: '18px',
+      cursor: 'pointer',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      transition: 'all 0.2s',
+      zIndex: 10,
+      boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+    }}
+    title={favoriteTemplates.includes('modern') ? 'Удалить из избранного' : 'Добавить в избранное'}
+  >
+    {favoriteTemplates.includes('modern') ? '❤️' : '🤍'}
+  </button>
       <div className="template-preview modern"></div>
       <span>Современный</span>
     </div>
@@ -513,7 +616,33 @@ const doc = new Document({
     <div 
       className={`template-option ${selectedTemplate === 'classic' ? 'active' : ''}`} 
       onClick={() => setSelectedTemplate('classic')}
+      style={{ position: 'relative' }} // 🔥 Важно для позиционирования кнопки
     >
+       <button
+        type="button"
+    onClick={(e) => toggleFavorite('classic', e)}
+    style={{
+      position: 'absolute',
+      top: '10px',
+      right: '10px',
+      background: favoriteTemplates.includes('classic') ? '#fee2e2' : 'rgba(255,255,255,0.9)',
+      border: 'none',
+      borderRadius: '50%',
+      width: '32px',
+      height: '32px',
+      fontSize: '18px',
+      cursor: 'pointer',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      transition: 'all 0.2s',
+      zIndex: 10,
+      boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+    }}
+    title={favoriteTemplates.includes('classic') ? 'Удалить из избранного' : 'Добавить в избранное'}
+  >
+    {favoriteTemplates.includes('classic') ? '❤️' : '🤍'}
+  </button>
       <div className="template-preview classic"></div>
       <span>Классический</span>
     </div>
@@ -521,7 +650,33 @@ const doc = new Document({
     <div 
       className={`template-option ${selectedTemplate === 'elegant' ? 'active' : ''}`} 
       onClick={() => setSelectedTemplate('elegant')}
+      style={{ position: 'relative' }} // 🔥 Важно для позиционирования кнопки
     >
+       <button
+        type="button"
+    onClick={(e) => toggleFavorite('elegant', e)}
+    style={{
+      position: 'absolute',
+      top: '10px',
+      right: '10px',
+      background: favoriteTemplates.includes('elegant') ? '#fee2e2' : 'rgba(255,255,255,0.9)',
+      border: 'none',
+      borderRadius: '50%',
+      width: '32px',
+      height: '32px',
+      fontSize: '18px',
+      cursor: 'pointer',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      transition: 'all 0.2s',
+      zIndex: 10,
+      boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+    }}
+    title={favoriteTemplates.includes('elegant') ? 'Удалить из избранного' : 'Добавить в избранное'}
+  >
+    {favoriteTemplates.includes('elegant') ? '❤️' : '🤍'}
+  </button>
       <div className="template-preview elegant"></div>
       <span>Элегантный</span>
     </div>
@@ -529,7 +684,33 @@ const doc = new Document({
     <div 
       className={`template-option ${selectedTemplate === 'minimal' ? 'active' : ''}`} 
       onClick={() => setSelectedTemplate('minimal')}
+      style={{ position: 'relative' }} // 🔥 Важно для позиционирования кнопки
     >
+       <button
+        type="button"
+    onClick={(e) => toggleFavorite('minimal', e)}
+    style={{
+      position: 'absolute',
+      top: '10px',
+      right: '10px',
+      background: favoriteTemplates.includes('minimal') ? '#fee2e2' : 'rgba(255,255,255,0.9)',
+      border: 'none',
+      borderRadius: '50%',
+      width: '32px',
+      height: '32px',
+      fontSize: '18px',
+      cursor: 'pointer',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      transition: 'all 0.2s',
+      zIndex: 10,
+      boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+    }}
+    title={favoriteTemplates.includes('minimal') ? 'Удалить из избранного' : 'Добавить в избранное'}
+  >
+    {favoriteTemplates.includes('minimal') ? '❤️' : '🤍'}
+  </button>
       <div className="template-preview minimal"></div>
       <span>Минималистичный</span>
     </div>
@@ -537,7 +718,33 @@ const doc = new Document({
     <div 
       className={`template-option ${selectedTemplate === 'creative' ? 'active' : ''}`} 
       onClick={() => setSelectedTemplate('creative')}
+      style={{ position: 'relative' }} // 🔥 Важно для позиционирования кнопки
     >
+       <button
+        type="button"
+    onClick={(e) => toggleFavorite('creative', e)}
+    style={{
+      position: 'absolute',
+      top: '10px',
+      right: '10px',
+      background: favoriteTemplates.includes('creative') ? '#fee2e2' : 'rgba(255,255,255,0.9)',
+      border: 'none',
+      borderRadius: '50%',
+      width: '32px',
+      height: '32px',
+      fontSize: '18px',
+      cursor: 'pointer',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      transition: 'all 0.2s',
+      zIndex: 10,
+      boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+    }}
+    title={favoriteTemplates.includes('creative') ? 'Удалить из избранного' : 'Добавить в избранное'}
+  >
+    {favoriteTemplates.includes('creative') ? '❤️' : '🤍'}
+  </button>
       <div className="template-preview creative"></div>
       <span>Креативный</span>
     </div>
@@ -545,7 +752,33 @@ const doc = new Document({
     <div 
       className={`template-option ${selectedTemplate === 'bold' ? 'active' : ''}`} 
       onClick={() => setSelectedTemplate('bold')}
+      style={{ position: 'relative' }} // 🔥 Важно для позиционирования кнопки
     >
+       <button
+        type="button"
+    onClick={(e) => toggleFavorite('bold', e)}
+    style={{
+      position: 'absolute',
+      top: '10px',
+      right: '10px',
+      background: favoriteTemplates.includes('bold') ? '#fee2e2' : 'rgba(255,255,255,0.9)',
+      border: 'none',
+      borderRadius: '50%',
+      width: '32px',
+      height: '32px',
+      fontSize: '18px',
+      cursor: 'pointer',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      transition: 'all 0.2s',
+      zIndex: 10,
+      boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+    }}
+    title={favoriteTemplates.includes('bold') ? 'Удалить из избранного' : 'Добавить в избранное'}
+  >
+    {favoriteTemplates.includes('bold') ? '❤️' : '🤍'}
+  </button>
       <div className="template-preview bold"></div>
       <span>Смелый</span>
     </div>
@@ -566,6 +799,13 @@ const doc = new Document({
         </div>
       </div>
       <Footer />
+      {showVersionHistory && (
+  <ResumeVersionHistory 
+    resumeId={resumeId} 
+    onClose={() => setShowVersionHistory(false)} 
+    onRefresh={() => window.location.reload()} 
+  />
+)}
     </>
   );
 };
