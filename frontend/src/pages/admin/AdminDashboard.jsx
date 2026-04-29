@@ -96,6 +96,27 @@ export default function AdminDashboard() {
             <span style={{ fontSize: '18px' }}>🎨</span>
             Шаблоны
           </Link>
+
+         
+<Link 
+  to="/admin/logs" 
+  style={getLinkStyle('/admin/logs')}
+  onMouseEnter={handleLinkHover}
+  onMouseLeave={handleLinkLeave}
+>
+  <span style={{ fontSize: '18px' }}>📋</span>
+  Логи
+</Link>
+{/* В навигации сайдбара, после Templates */}
+<Link 
+  to="/admin/reviews" 
+  style={getLinkStyle('/admin/reviews')}
+  onMouseEnter={handleLinkHover}
+  onMouseLeave={handleLinkLeave}
+>
+  <span style={{ fontSize: '18px' }}>⭐</span>
+  Отзывы
+</Link>
         </nav>
 
         {/* Кнопка выхода — внизу сайдбара */}

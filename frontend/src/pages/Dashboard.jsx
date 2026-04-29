@@ -8,6 +8,7 @@ import CoverLettersManager from '../components/CoverLettersManager';
 // 🔥 Добавь этот импорт
 import ResumeList from '../components/ResumeList';
 import ResumeShareManager from '../components/ResumeShareManager';
+import ReviewForm from '../components/ReviewForm';
 
 const Dashboard = () => {
   const { user, logout, updateAvatar, removeAvatar } = useAuth();
@@ -30,6 +31,10 @@ const Dashboard = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [deleteError, setDeleteError] = useState('');
 const [isDeleting, setIsDeleting] = useState(false);
+
+// В компоненте Dashboard, с другими useState:
+const [showReviewForm, setShowReviewForm] = useState(false);
+const [userReviews, setUserReviews] = useState([]);
   // Инициализация формы данными из user
   useEffect(() => {
     if (user) {
@@ -119,6 +124,24 @@ const [isDeleting, setIsDeleting] = useState(false);
     logout();
     navigate('/');
   };
+
+  // В Dashboard.jsx, после других функций (например, после handleLogout):
+
+const fetchUserReviews = async () => {
+  try {
+    const res = await fetch('/api/reviews/me', { credentials: 'include' });
+    if (res.ok) setUserReviews(await res.json());
+  } catch (err) {
+    console.error('Failed to fetch reviews:', err);
+  }
+};
+
+// Вызываем при монтировании компонента или переключении секции:
+useEffect(() => {
+  if (activeSection === 'reviews') {
+    fetchUserReviews();
+  }
+}, [activeSection]);
 
   // Если пользователь не загружен — показываем загрузку
   if (!user) {
@@ -221,6 +244,13 @@ const handleDeleteAccount = async () => {
   onClick={() => setActiveSection('coverLetters')}
 >
   <i className="fas fa-envelope-open-text"></i> Сопроводительные
+</li>
+{/* В nav.dashboard-nav ul, после других пунктов */}
+<li 
+  className={activeSection === 'reviews' ? 'active' : ''}
+  onClick={() => setActiveSection('reviews')}
+>
+  <i className="fas fa-star"></i> Мои отзывы
 </li>
               </ul>
             </nav>
@@ -418,7 +448,100 @@ const handleDeleteAccount = async () => {
                 <p>Функционал настроек будет добавлен позже.</p>
               </div>
             )}
+{/* После секции coverLetters, внутри main.main-content */}
 
+{activeSection === 'reviews' && (
+  <div className="reviews-section" style={{ maxWidth: '600px', margin: '0 auto' }}>
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+      <h2>⭐ Мои отзывы</h2>
+      <button 
+        onClick={() => setShowReviewForm(!showReviewForm)}
+        className="btn btn-outline"
+        style={{ fontSize: '14px', padding: '8px 16px' }}
+      >
+        {showReviewForm ? 'Скрыть форму' : '+ Новый отзыв'}
+      </button>
+    </div>
+
+    {showReviewForm && (
+      <div style={{ marginBottom: '30px' }}>
+        <ReviewForm 
+          existingReview={userReviews.find(r => r.status !== 'rejected')}
+          onSuccess={() => {
+            setShowReviewForm(false);
+            fetchUserReviews();
+          }}
+        />
+      </div>
+    )}
+
+    {/* Список отзывов пользователя */}
+    <div className="reviews-list">
+      {userReviews.length === 0 ? (
+        <p style={{ color: '#64748b', textAlign: 'center', padding: '20px' }}>
+          У вас пока нет отзывов. Поделитесь своим опытом!
+        </p>
+      ) : (
+        userReviews.map(review => (
+          <div key={review.id} style={{
+            background: '#f8fafc',
+            padding: '16px',
+            borderRadius: '12px',
+            marginBottom: '12px',
+            borderLeft: `4px solid ${
+              review.status === 'approved' ? '#22c55e' : 
+              review.status === 'rejected' ? '#ef4444' : '#f59e0b'
+            }`
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
+              <div>
+                <div style={{ color: '#fbbf24', fontSize: '18px', marginBottom: '8px' }}>
+                  {'★'.repeat(review.rating)}{'☆'.repeat(5 - review.rating)}
+                </div>
+                {review.title && (
+                  <h4 style={{ margin: '0 0 8px', fontSize: '16px' }}>{review.title}</h4>
+                )}
+                <p style={{ margin: '0 0 8px', color: '#334155', fontSize: '14px', lineHeight: '1.5' }}>
+                  {review.content}
+                </p>
+                <small style={{ color: '#94a3b8' }}>
+                  {new Date(review.created_at).toLocaleDateString('ru-RU')}
+                </small>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'end' }}>
+                <span style={{
+                  fontSize: '11px',
+                  padding: '4px 10px',
+                  borderRadius: '20px',
+                  background: review.status === 'approved' ? '#dcfce7' : 
+                             review.status === 'rejected' ? '#fee2e2' : '#fef3c7',
+                  color: review.status === 'approved' ? '#166534' : 
+                        review.status === 'rejected' ? '#dc2626' : '#92400e',
+                  fontWeight: '500'
+                }}>
+                  {review.status === 'approved' ? '✅ Опубликовано' : 
+                   review.status === 'rejected' ? '❌ Отклонено' : '⏳ На модерации'}
+                </span>
+                {review.status !== 'rejected' && (
+                  <button 
+                    onClick={() => {
+                      setForm({ ...form, id: review.id });
+                      setShowReviewForm(true);
+                    }}
+                    className="btn-sm"
+                    style={{ fontSize: '12px', padding: '4px 10px' }}
+                  >
+                    ✏️
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        ))
+      )}
+    </div>
+  </div>
+)}
             {activeSection === 'coverLetters' && <CoverLettersManager />}
           </main>
           {showShareModal && (

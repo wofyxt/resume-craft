@@ -13,6 +13,8 @@ import AdminDashboard from './pages/admin/AdminDashboard';
 import AdminStats from './pages/admin/AdminStats';
 import AdminUsers from './pages/admin/AdminUsers';
 import AdminTemplates from './pages/admin/AdminTemplates';
+import AdminLogs from './pages/admin/AdminLogs';
+import AdminReviews from './pages/admin/AdminReviews';
 
 
 function App() {
@@ -26,6 +28,8 @@ function App() {
             <Route path="stats" element={<AdminStats />} />
             <Route path="users" element={<AdminUsers />} />
             <Route path="templates" element={<AdminTemplates />} />
+            <Route path="logs" element={<AdminLogs />} />
+            <Route path="reviews" element={<AdminReviews />} />
           </Route>
           <Route path="/" element={<Home />} />
           <Route path="/auth" element={<Auth />} />

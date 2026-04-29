@@ -85,7 +85,27 @@ const requireAuth = async (req, res, next) => {
     res.status(403).json({ error: 'Недействительный токен' });
   }
 };
-
+// 📋 Middleware для логирования действий
+const logActivity = async (userId, actionType, entityType = null, entityId = null, metadata = null, req = null) => {
+  try {
+    await pool.query(
+      `INSERT INTO activity_logs (user_id, action_type, entity_type, entity_id, ip_address, user_agent, metadata)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [
+        userId,
+        actionType,
+        entityType,
+        entityId,
+        req?.ip || null,
+        req?.get('User-Agent') || null,
+        metadata ? JSON.stringify(metadata) : null
+      ]
+    );
+  } catch (err) {
+    console.error('Log activity error:', err);
+    // Не прерываем основной запрос, если лог не записался
+  }
+};
 // 🔑 AUTH ROUTES
 app.post('/api/auth/register', async (req, res) => {
   const { username, email, password } = req.body;
@@ -99,6 +119,8 @@ app.post('/api/auth/register', async (req, res) => {
     const user = result.rows[0];
     const token = jwt.sign({ userId: user.id, email: user.email }, process.env.JWT_SECRET, { expiresIn: '7d' });
     res.cookie('token', token, COOKIE_OPTS);
+
+    await logActivity(user.id, 'register', 'user', user.id, null, req);
     res.status(201).json({ 
       user: { 
         id: user.id, 
@@ -138,6 +160,9 @@ app.post('/api/auth/login', async (req, res) => {
     const token = jwt.sign({ userId: user.id, email: user.email }, process.env.JWT_SECRET, { expiresIn: '7d' });
     res.cookie('token', token, COOKIE_OPTS);
 
+    // 🔥 Логирование входа
+    await logActivity(user.id, 'login', 'user', user.id, { method: 'password' }, req);
+
     res.json({
       user: {
         id: user.id,
@@ -148,6 +173,7 @@ app.post('/api/auth/login', async (req, res) => {
         is_blocked: user.is_blocked
       }
     });
+    
   } catch (err) {
     console.error('Login error:', err);
     res.status(500).json({ error: 'Ошибка сервера' });
@@ -178,11 +204,18 @@ app.get('/api/auth/me', async (req, res) => {
   }
 });
 
-app.post('/api/auth/logout', (req, res) => {
+app.post('/api/auth/logout', async (req, res) => {
+  // 🔥 Логирование выхода
+  const token = req.cookies.token;
+  if (token) {
+    try {
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      await logActivity(decoded.userId, 'logout', 'user', decoded.userId, null, req);
+    } catch {}
+  }
   res.clearCookie('token', COOKIE_OPTS);
   res.json({ message: 'Выход выполнен' });
 });
-
 
 // 🔐 ЗАПРОС НА СБРОС ПАРОЛЯ
 const transporter = nodemailer.createTransport({
@@ -296,7 +329,8 @@ app.post('/api/auth/reset-password', async (req, res) => {
       'UPDATE users SET password_hash = $1, reset_token = NULL, reset_token_expires = NULL WHERE id = $2',
       [hashed, userId]
     );
-
+// 🔥 Логирование сброса пароля
+    await logActivity(userId, 'password_reset', 'user', userId, null, req);
     // 3. Возвращаем JSON-ответ
     res.json({ message: 'Пароль успешно изменён' });
 
@@ -317,6 +351,7 @@ app.post('/api/users/avatar', requireAuth, upload.single('avatar'), async (req, 
       'UPDATE users SET avatar_url = $1 WHERE id = $2 RETURNING id, name, email, avatar_url',
       [avatarUrl, req.userId]
     );
+    await logActivity(req.userId, 'avatar_upload', 'user', req.userId, { filename: req.file.filename }, req);
 
     res.json({
       user: {
@@ -345,6 +380,7 @@ app.delete('/api/users/avatar', requireAuth, async (req, res) => {
     }
 
     await pool.query('UPDATE users SET avatar_url = NULL WHERE id = $1', [req.userId]);
+     await logActivity(req.userId, 'avatar_delete', 'user', req.userId, null, req);
     res.json({ message: 'Аватар удалён' });
   } catch (err) {
     console.error('Avatar delete error:', err);
@@ -396,7 +432,7 @@ app.put('/api/users/profile', requireAuth, async (req, res) => {
     if (!result.rows.length) {
       return res.status(404).json({ error: 'Пользователь не найден' });
     }
-
+ await logActivity(req.userId, 'profile_update', 'user', req.userId, { fields: ['username', 'email', password ? 'password' : null].filter(Boolean) }, req);
     // Возвращаем данные в формате, ожидаемом фронтендом
     res.json({
       user: {
@@ -428,24 +464,45 @@ app.post('/api/resumes', requireAuth, async (req, res) => {
     'INSERT INTO resumes (user_id, title, data, template) VALUES ($1, $2, $3, $4) RETURNING id, title, data, template, updated_at AS "updatedAt"',
     [req.userId, title || 'Без названия', data, template || 'modern']
   );
+  await logActivity(req.userId, 'resume_create', 'resume', result.rows[0].id, { title: result.rows[0].title }, req);
   res.status(201).json(result.rows[0]);
 });
 
 app.put('/api/resumes/:id', requireAuth, async (req, res) => {
-  const { title, data, template } = req.body;
-  const result = await pool.query(
-    'UPDATE resumes SET title = $1, data = $2, template = $3, updated_at = NOW() WHERE id = $4 AND user_id = $5 RETURNING id, title, data, template, updated_at AS "updatedAt"',
-    [title, data, template, req.params.id, req.userId]
-  );
-  if (!result.rows.length) return res.status(404).json({ error: 'Резюме не найдено или доступ запрещён' });
-  res.json(result.rows[0]);
+  try {
+    const { title, data, template } = req.body;
+    const result = await pool.query(
+      `UPDATE resumes SET title = $1, data = $2, template = $3, updated_at = NOW() WHERE id = $4 AND user_id = $5 RETURNING id, title, data, template, updated_at AS "updatedAt"`,
+      [title, data, template, req.params.id, req.userId]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: 'Резюме не найдено' });
+    
+    // 🔥 Логирование обновления резюме
+    await logActivity(req.userId, 'resume_update', 'resume', req.params.id, { title }, req);
+    
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Update resume error:', err);
+    res.status(500).json({ error: 'Ошибка обновления' });
+  }
 });
 
 app.delete('/api/resumes/:id', requireAuth, async (req, res) => {
-  const result = await pool.query('DELETE FROM resumes WHERE id = $1 AND user_id = $2', [req.params.id, req.userId]);
-  if (result.rowCount === 0) return res.status(404).json({ error: 'Резюме не найдено' });
-  res.json({ message: 'Удалено' });
+  try {
+    const result = await pool.query('DELETE FROM resumes WHERE id = $1 AND user_id = $2', [req.params.id, req.userId]);
+    if (result.rowCount === 0) return res.status(404).json({ error: 'Резюме не найдено' });
+    
+    // 🔥 Логирование удаления резюме
+    await logActivity(req.userId, 'resume_delete', 'resume', req.params.id, null, req);
+    
+    res.json({ message: 'Удалено' });
+  } catch (err) {
+    console.error('Delete resume error:', err);
+    res.status(500).json({ error: 'Ошибка удаления' });
+  }
 });
+
+
 
 // 🔒 Middleware только для админов
 const requireAdmin = async (req, res, next) => {
@@ -464,7 +521,200 @@ const requireAdmin = async (req, res, next) => {
     res.status(403).json({ error: 'Недействительный токен' });
   }
 };
+// ⭐ REVIEWS ROUTES
 
+// 📝 Создать отзыв (только для авторизованных)
+app.post('/api/reviews', requireAuth, async (req, res) => {
+  try {
+    const { rating, title, content } = req.body;
+    
+    if (!rating || !content) {
+      return res.status(400).json({ error: 'Оценка и текст обязательны' });
+    }
+    if (rating < 1 || rating > 5) {
+      return res.status(400).json({ error: 'Оценка должна быть от 1 до 5' });
+    }
+
+    // Проверяем, нет ли уже отзыва от этого пользователя
+    const existing = await pool.query('SELECT id FROM reviews WHERE user_id = $1', [req.userId]);
+    if (existing.rows.length > 0) {
+      return res.status(409).json({ error: 'Вы уже оставили отзыв. Вы можете отредактировать его.' });
+    }
+
+    const result = await pool.query(
+      `INSERT INTO reviews (user_id, rating, title, content) 
+       VALUES ($1, $2, $3, $4) RETURNING *`,
+      [req.userId, rating, title || null, content]
+    );
+
+    // 🔥 Логируем создание отзыва
+    await logActivity(req.userId, 'review_create', 'review', result.rows[0].id, { rating }, req);
+
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error('Create review error:', err);
+    res.status(500).json({ error: 'Ошибка отправки отзыва' });
+  }
+});
+
+// 📋 Получить мои отзывы
+app.get('/api/reviews/me', requireAuth, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT id, rating, title, content, status, created_at 
+       FROM reviews WHERE user_id = $1 ORDER BY created_at DESC`,
+      [req.userId]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: 'Ошибка загрузки отзывов' });
+  }
+});
+
+// ✏️ Обновить мой отзыв
+app.put('/api/reviews/:id', requireAuth, async (req, res) => {
+  try {
+    const { rating, title, content } = req.body;
+    
+    // Проверяем, что отзыв принадлежит пользователю
+    const check = await pool.query(
+      'SELECT id, status FROM reviews WHERE id = $1 AND user_id = $2',
+      [req.params.id, req.userId]
+    );
+    if (!check.rows.length) {
+      return res.status(404).json({ error: 'Отзыв не найден' });
+    }
+    
+    // Нельзя редактировать отклонённые отзывы
+    if (check.rows[0].status === 'rejected') {
+      return res.status(403).json({ error: 'Отклонённые отзывы нельзя редактировать' });
+    }
+
+    const result = await pool.query(
+      `UPDATE reviews SET rating = $1, title = $2, content = $3, updated_at = NOW(), 
+       status = CASE WHEN status = 'approved' THEN 'pending' ELSE status END
+       WHERE id = $4 RETURNING *`,
+      [rating, title || null, content, req.params.id]
+    );
+
+    await logActivity(req.userId, 'review_update', 'review', req.params.id, null, req);
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Update review error:', err);
+    res.status(500).json({ error: 'Ошибка обновления отзыва' });
+  }
+});
+
+// 🗑️ Удалить мой отзыв
+app.delete('/api/reviews/:id', requireAuth, async (req, res) => {
+  try {
+    const result = await pool.query(
+      'DELETE FROM reviews WHERE id = $1 AND user_id = $2 RETURNING id',
+      [req.params.id, req.userId]
+    );
+    if (!result.rows.length) {
+      return res.status(404).json({ error: 'Отзыв не найден' });
+    }
+    
+    await logActivity(req.userId, 'review_delete', 'review', req.params.id, null, req);
+    
+    res.json({ message: 'Отзыв удалён' });
+  } catch (err) {
+    console.error('Delete review error:', err);
+    res.status(500).json({ error: 'Ошибка удаления отзыва' });
+  }
+});
+
+// 🌐 Публичные отзывы (для главной страницы)
+app.get('/api/reviews/public', async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 10;
+    const result = await pool.query(
+      `SELECT r.id, r.rating, r.title, r.content, r.created_at, 
+              u.name as author_name, u.avatar_url
+       FROM reviews r
+       JOIN users u ON r.user_id = u.id
+       WHERE r.status = 'approved'
+       ORDER BY r.created_at DESC
+       LIMIT $1`,
+      [limit]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Get public reviews error:', err);
+    res.status(500).json({ error: 'Ошибка загрузки отзывов' });
+  }
+});
+
+// 🔐 Админ: получить все отзывы (с фильтрами)
+app.get('/api/admin/reviews', requireAdmin, async (req, res) => {
+  try {
+    const { status, userId, limit = 50, offset = 0 } = req.query;
+    
+    let query = `
+      SELECT r.*, u.name as author_name, u.email as author_email, u.avatar_url
+      FROM reviews r
+      JOIN users u ON r.user_id = u.id
+      WHERE 1=1
+    `;
+    const params = [];
+    let paramCount = 0;
+
+    if (status) {
+      paramCount++;
+      query += ` AND r.status = $${paramCount}`;
+      params.push(status);
+    }
+    if (userId) {
+      paramCount++;
+      query += ` AND r.user_id = $${paramCount}`;
+      params.push(userId);
+    }
+
+    paramCount++;
+    query += ` ORDER BY r.created_at DESC LIMIT $${paramCount}`;
+    params.push(parseInt(limit));
+    
+    paramCount++;
+    query += ` OFFSET $${paramCount}`;
+    params.push(parseInt(offset));
+
+    const result = await pool.query(query, params);
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Admin reviews error:', err);
+    res.status(500).json({ error: 'Ошибка загрузки отзывов' });
+  }
+});
+
+// 🔐 Админ: модерация отзыва (одобрить/отклонить)
+app.put('/api/admin/reviews/:id/moderate', requireAdmin, async (req, res) => {
+  try {
+    const { status } = req.body; // 'approved' или 'rejected'
+    if (!['approved', 'rejected'].includes(status)) {
+      return res.status(400).json({ error: 'Неверный статус' });
+    }
+
+    const result = await pool.query(
+      `UPDATE reviews SET status = $1, updated_at = NOW() 
+       WHERE id = $2 RETURNING *`,
+      [status, req.params.id]
+    );
+
+    if (!result.rows.length) {
+      return res.status(404).json({ error: 'Отзыв не найден' });
+    }
+
+    // 🔥 Логируем модерацию
+    await logActivity(req.userId, 'review_moderate', 'review', req.params.id, { newStatus: status }, req);
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Moderate review error:', err);
+    res.status(500).json({ error: 'Ошибка модерации' });
+  }
+});
 // 📊 Статистика
 app.get('/api/admin/stats', requireAdmin, async (req, res) => {
   try {
@@ -503,6 +753,7 @@ app.put('/api/admin/users/:id/block', requireAdmin, async (req, res) => {
       'UPDATE users SET is_blocked = NOT is_blocked WHERE id = $1 RETURNING id, is_blocked',
       [id]
     );
+     await logActivity(req.userId, result.rows[0].is_blocked ? 'user_block' : 'user_unblock', 'user', id, null, req);
     res.json({ message: result.rows[0].is_blocked ? 'Заблокирован' : 'Разблокирован', isBlocked: result.rows[0].is_blocked });
   } catch (err) {
     res.status(500).json({ error: 'Ошибка обновления статуса' });
@@ -517,14 +768,57 @@ app.post('/api/admin/templates', requireAdmin, async (req, res) => {
       'INSERT INTO templates (name, description, preview_url, css_class) VALUES ($1, $2, $3, $4) RETURNING *',
       [name, description, preview_url, css_class]
     );
+     await logActivity(req.userId, 'template_create', 'template', result.rows[0].id, { name }, req);
     res.status(201).json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ error: 'Ошибка добавления шаблона' });
   }
 });
+// 📋 Админ: получение логов активности
+app.get('/api/admin/logs', requireAdmin, async (req, res) => {
+  try {
+    const { userId, actionType, limit = 100, offset = 0 } = req.query;
+    
+    let query = `
+      SELECT al.*, u.name as username, u.email as user_email 
+      FROM activity_logs al
+      LEFT JOIN users u ON al.user_id = u.id
+      WHERE 1=1
+    `;
+    const params = [];
+    let paramCount = 0;
+
+    if (userId) {
+      paramCount++;
+      query += ` AND al.user_id = $${paramCount}`;
+      params.push(userId);
+    }
+    if (actionType) {
+      paramCount++;
+      query += ` AND al.action_type = $${paramCount}`;
+      params.push(actionType);
+    }
+
+    paramCount++;
+    query += ` ORDER BY al.created_at DESC LIMIT $${paramCount}`;
+    params.push(parseInt(limit));
+    
+    paramCount++;
+    query += ` OFFSET $${paramCount}`;
+    params.push(parseInt(offset));
+
+    const result = await pool.query(query, params);
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Get logs error:', err);
+    res.status(500).json({ error: 'Ошибка загрузки логов' });
+  }
+});
 // 🗑️ УДАЛЕНИЕ АККАУНТА
 app.delete('/api/users/account', requireAuth, async (req, res) => {
   try {
+        await logActivity(req.userId, 'account_delete', 'user', req.userId, { reason: 'user_request' }, req);
+
     // 1. Удаляем резюме (на случай, если в БД нет ON DELETE CASCADE)
     await pool.query('DELETE FROM resumes WHERE user_id = $1', [req.userId]);
 
@@ -618,6 +912,7 @@ app.post('/api/cover-letters', requireAuth, async (req, res) => {
       INSERT INTO cover_letters (user_id, resume_id, title, content) 
       VALUES ($1, $2, $3, $4) RETURNING *`, 
       [req.userId, resume_id || null, title, content]);
+       await logActivity(req.userId, 'cover_letter_create', 'cover_letter', result.rows[0].id, { title }, req);
     res.status(201).json(result.rows[0]);
   } catch (err) { res.status(500).json({ error: 'Ошибка сохранения письма' }); }
 });
@@ -632,6 +927,8 @@ app.put('/api/cover-letters/:id', requireAuth, async (req, res) => {
       [title, content, resume_id || null, req.params.id, req.userId]);
       
     if (!result.rows.length) return res.status(404).json({ error: 'Письмо не найдено' });
+        await logActivity(req.userId, 'cover_letter_update', 'cover_letter', req.params.id, null, req);
+
     res.json(result.rows[0]);
   } catch (err) { res.status(500).json({ error: 'Ошибка обновления' }); }
 });
@@ -640,6 +937,7 @@ app.delete('/api/cover-letters/:id', requireAuth, async (req, res) => {
   try {
     const result = await pool.query('DELETE FROM cover_letters WHERE id = $1 AND user_id = $2', [req.params.id, req.userId]);
     if (result.rowCount === 0) return res.status(404).json({ error: 'Не найдено' });
+     await logActivity(req.userId, 'cover_letter_delete', 'cover_letter', req.params.id, null, req);
     res.json({ message: 'Удалено' });
   } catch (err) { res.status(500).json({ error: 'Ошибка удаления' }); }
 });
@@ -694,6 +992,7 @@ app.post('/api/resumes/:id/share', requireAuth, async (req, res) => {
        VALUES ($1, $2, $3, $4) RETURNING slug, expires_at`,
       [resumeId, slug, expiresAt || null, passwordHash]
     );
+    await logActivity(req.userId, 'share_create', 'resume_share', null, { resume_id: resumeId, slug: result.rows[0].slug }, req);
 
     res.status(201).json({ 
       link: `/s/${slug}`, 
@@ -734,6 +1033,8 @@ app.delete('/api/resumes/shares/:slug', requireAuth, async (req, res) => {
     if (result.rowCount === 0) {
       return res.status(404).json({ error: 'Ссылка не найдена' });
     }
+        await logActivity(req.userId, 'share_delete', 'resume_share', null, { slug: req.params.slug }, req);
+
     res.json({ message: 'Ссылка удалена' });
   } catch (err) {
     res.status(500).json({ error: 'Ошибка удаления' });
@@ -779,6 +1080,7 @@ app.get('/api/public/resume/:slug', async (req, res) => {
 
     // Увеличиваем счётчик просмотров
     await pool.query('UPDATE resume_shares SET views_count = views_count + 1 WHERE id = $1', [s.id]);
+    await logActivity(null, 'share_view', 'resume_share', s.id, { slug, views: s.views_count + 1 }, req);
 
     // Возвращаем данные резюме (без чувствительной информации)
     res.json({
