@@ -10,8 +10,10 @@ import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } fro
 import { saveAs } from 'file-saver';
 import ResumeVersionHistory from '../components/ResumeVersionHistory';
 
+
 const Editor = () => {
   const { resumeId } = useParams();
+  const [noExperience, setNoExperience] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const navigate = useNavigate();
   const [selectedTemplate, setSelectedTemplate] = useState('modern');
@@ -55,9 +57,13 @@ const [showVersionHistory, setShowVersionHistory] = useState(false);
       
       // 🔹 Заполняем форму данными из БД
       if (resume.data) {
-        Object.keys(resume.data).forEach(key => {
+       Object.keys(resume.data).forEach(key => {
           setValue(key, resume.data[key]);
         });
+        // 🔥 Если опыта нет — включаем режим "нет опыта"
+        if (!resume.data.experience?.length || resume.data.experience[0]?.company === '') {
+          setNoExperience(true);
+        }
       }
       if (resume.template) setSelectedTemplate(resume.template);
       if (resume.profession_id) setSelectedProfession(resume.profession_id);
@@ -92,6 +98,19 @@ fetch('/api/professions', { credentials: 'include' })
 }, [resumeId, setValue, navigate]);
 
  const onSubmit = async (data) => {
+  const resumeData = {
+    title: data.personal.fullName || 'Без названия',
+    data: {
+      ...data,
+      experience: noExperience ? [] : data.experience
+    },
+    template: selectedTemplate,
+    profession_id: selectedProfession || null,
+  };
+    if (!selectedProfession) {
+    alert('⚠️ Пожалуйста, выберите профессию из списка');
+    return;
+  }
   console.log('🚀 onSubmit вызвана! Данные:', data); 
   try {
     const resumeData = {
@@ -358,199 +377,323 @@ const toggleFavorite = async (cssClass, e) => {
             <div className="editor-form">
               <form onSubmit={handleSubmit(onSubmit)}>
                 {/* Личная информация */}
-                <section className="form-section">
-                  <h2>Личная информация</h2>
-                  <div className="form-grid">
-                    <div className="form-group">
-                      <label>ФИО *</label>
-                      <input 
-  {...register('personal.fullName', { 
-    required: 'Введите ФИО',
-    minLength: { value: 2, message: 'Минимум 2 символа' },
-    maxLength: { value: 50, message: 'Не более 50 символов' },
-    pattern: { value: /^[а-яА-ЯёЁa-zA-Z\s\-]+$/, message: 'Только буквы и пробелы' }
-  })} 
-/>
-{errors.personal?.fullName && <span className="error">{errors.personal.fullName.message}</span>}
-                    </div>
-                    <div className="form-group">
-                      <label>Должность</label>
-                      <input {...register('personal.title')} />
-                    </div>
-                    <div className="form-group">
-  <label>Профессия / Специализация</label>
-  <select 
-    value={selectedProfession} 
-    onChange={(e) => setSelectedProfession(e.target.value)}
-  >
-    <option value="">Не выбрано</option>
-    {professions.map(p => (
-      <option key={p.id} value={p.id}>{p.name}</option>
-    ))}
-  </select>
-</div>
-                    <div className="form-group">
-                      <label>Email *</label>
-                     <input 
-  type="email"
-  {...register('personal.email', { 
-    required: 'Введите email',
-    pattern: { 
-      value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i, 
-      message: 'Некорректный email' 
-    }
-  })} 
-/>{errors.personal?.email && <span className="error">{errors.personal.email.message}</span>}
-                    </div>
-                    <div className="form-group">
-                      <label>Телефон</label>
-                     <input 
-  {...register('personal.phone', { 
-    pattern: { 
-      value: /^\+7\s?\(?\d{3}\)?\s?\d{3}-?\d{2}-?\d{2}$/, 
-      message: 'Пример: +7 (999) 123-45-67' 
-    }
-  })} 
-  placeholder="+7 (___) ___-__-__"
-/>
-{errors.personal?.phone && <span className="error">{errors.personal.phone.message}</span>}
-                    </div>
-                    <div className="form-group">
-                      <label>Адрес</label>
-                      <input {...register('personal.address')} />
-                    </div>
-                    <div className="form-group full-width">
-                      <label>Краткое описание (о себе)</label>
-                      <textarea rows="3" {...register('personal.summary')}></textarea>
-                    </div>
-                  </div>
-                </section>
-
-                {/* Опыт работы */}
-                <section className="form-section">
-                  <h2>Опыт работы</h2>
-                  {expFields.map((field, index) => (
-                    <div key={field.id} className="dynamic-field">
-                      <div className="form-grid">
-                        <div className="form-group">
-                          <label>Компания</label>
-                          <input {...register(`experience.${index}.company`)} />
-                        </div>
-                        <div className="form-group">
-                          <label>Должность</label>
-                          <input {...register(`experience.${index}.position`)} />
-                        </div>
-                        {/* Дата начала */}
-<div className="form-group">
-  <label>Дата начала *</label>
-  <input 
-    type="month" 
-    {...register(`experience.${index}.startDate`, {
-      required: 'Укажите дату начала',
-      validate: {
-        notFuture: (value) => {
-          const today = new Date().toISOString().slice(0, 7); // "2026-01"
-          return value <= today || 'Дата не может быть в будущем';
-        }
-      }
-    })} 
-  />
-  {errors.experience?.[index]?.startDate && (
-    <span className="error">{errors.experience[index].startDate.message}</span>
-  )}
-</div>
-
-{/* Дата окончания */}
-<div className="form-group">
-  <label>Дата окончания</label>
-  <input 
-    type="month" 
-    {...register(`experience.${index}.endDate`, {
-      validate: {
-        afterStart: (value, formValues) => {
-          const start = formValues.experience?.[index]?.startDate;
-          // Если дата начала есть и дата окончания раньше — ошибка
-          if (start && value && value < start) {
-            return 'Не может быть раньше даты начала';
+     <section className="form-section">
+  <h2>Личная информация</h2>
+  <div className="form-grid">
+    <div className="form-group">
+      <label>ФИО *</label>
+      <input 
+        {...register('personal.fullName', { 
+          required: 'Введите ФИО',
+          minLength: { value: 2, message: 'Минимум 2 символа' },
+          maxLength: { value: 50, message: 'Не более 50 символов' },
+          pattern: { value: /^[а-яА-ЯёЁa-zA-Z\s\-]+$/, message: 'Только буквы и пробелы' }
+        })}
+        className={errors.personal?.fullName ? 'error-input' : ''}
+      />
+      {errors.personal?.fullName && <span className="error">{errors.personal.fullName.message}</span>}
+    </div>
+    
+    <div className="form-group">
+      <label>Должность</label>
+      <input 
+        {...register('personal.title', { 
+          maxLength: { value: 100, message: 'Не более 100 символов' }
+        })}
+        className={errors.personal?.title ? 'error-input' : ''}
+      />
+      {errors.personal?.title && <span className="error">{errors.personal.title.message}</span>}
+    </div>
+    
+    <div className="form-group">
+      <label>Профессия / Специализация</label>
+      <select 
+        value={selectedProfession} 
+        onChange={(e) => setSelectedProfession(e.target.value)}
+        className={selectedProfession === '' && errors.profession ? 'error-input' : ''}
+      >
+        <option value="">Не выбрано</option>
+        {professions.map(p => (
+          <option key={p.id} value={p.id}>{p.name}</option>
+        ))}
+      </select>
+      {selectedProfession === '' && errors.profession && <span className="error">Выберите профессию</span>}
+    </div>
+    
+    <div className="form-group">
+      <label>Email *</label>
+      <input 
+        type="email"
+        {...register('personal.email', { 
+          required: 'Введите email',
+          pattern: { 
+            value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i, 
+            message: 'Некорректный email' 
           }
-          return true;
-        }
-      }
-    })} 
-  />
-  {errors.experience?.[index]?.endDate && (
-    <span className="error">{errors.experience[index].endDate.message}</span>
+        })}
+        className={errors.personal?.email ? 'error-input' : ''}
+      />
+      {errors.personal?.email && <span className="error">{errors.personal.email.message}</span>}
+    </div>
+    
+    <div className="form-group">
+      <label>Телефон</label>
+      <input 
+        {...register('personal.phone', { 
+          pattern: { 
+            value: /^\+7\s?\(?\d{3}\)?\s?\d{3}-?\d{2}-?\d{2}$/, 
+            message: 'Пример: +7 (999) 123-45-67' 
+          }
+        })}
+        placeholder="+7 (___) ___-__-__"
+        className={errors.personal?.phone ? 'error-input' : ''}
+      />
+      {errors.personal?.phone && <span className="error">{errors.personal.phone.message}</span>}
+    </div>
+    
+    <div className="form-group">
+      <label>Адрес</label>
+      <input 
+        {...register('personal.address', { 
+          maxLength: { value: 200, message: 'Не более 200 символов' }
+        })}
+        className={errors.personal?.address ? 'error-input' : ''}
+      />
+      {errors.personal?.address && <span className="error">{errors.personal.address.message}</span>}
+    </div>
+    
+    <div className="form-group full-width">
+      <label>Краткое описание (о себе)</label>
+      <textarea 
+        rows="3" 
+        {...register('personal.summary', { 
+          maxLength: { value: 500, message: 'Не более 500 символов' }
+        })}
+        className={errors.personal?.summary ? 'error-input' : ''}
+      />
+      {errors.personal?.summary && <span className="error">{errors.personal.summary.message}</span>}
+    </div>
+  </div>
+</section>
+
+{/* Опыт работы */}
+{/* Опыт работы */}
+<section className="form-section">
+  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+    <h2 style={{ margin: 0 }}>Опыт работы</h2>
+    
+    {/* 🔥 Переключатель "Нет опыта" */}
+    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '14px', color: '#64748b' }}>
+      <input
+        type="checkbox"
+        checked={noExperience}
+        onChange={(e) => {
+          setNoExperience(e.target.checked);
+          // Если включаем "нет опыта" — очищаем поля
+          if (e.target.checked) {
+            setValue('experience', [{ company: '', position: '', startDate: '', endDate: '', description: '' }]);
+          }
+        }}
+        style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+      />
+      Нет опыта работы
+    </label>
+  </div>
+
+  {!noExperience ? (
+    <>
+      {expFields.map((field, index) => (
+        <div key={field.id} className="dynamic-field">
+          <div className="form-grid">
+            <div className="form-group">
+              <label>Компания *</label>
+              <input 
+                {...register(`experience.${index}.company`, { required: 'Введите название компании' })}
+                className={errors.experience?.[index]?.company ? 'error-input' : ''}
+              />
+              {errors.experience?.[index]?.company && <span className="error">{errors.experience[index].company.message}</span>}
+            </div>
+            <div className="form-group">
+              <label>Должность *</label>
+              <input 
+                {...register(`experience.${index}.position`, { required: 'Введите должность' })}
+                className={errors.experience?.[index]?.position ? 'error-input' : ''}
+              />
+              {errors.experience?.[index]?.position && <span className="error">{errors.experience[index].position.message}</span>}
+            </div>
+            
+            {/* Дата начала */}
+            <div className="form-group">
+              <label>Дата начала *</label>
+              <input 
+                type="month" 
+                {...register(`experience.${index}.startDate`, {
+                  required: 'Укажите дату начала',
+                  validate: {
+                    notFuture: (value) => {
+                      const today = new Date().toISOString().slice(0, 7);
+                      return value <= today || 'Дата не может быть в будущем';
+                    }
+                  }
+                })}
+                className={errors.experience?.[index]?.startDate ? 'error-input' : ''}
+              />
+              {errors.experience?.[index]?.startDate && (
+                <span className="error">{errors.experience[index].startDate.message}</span>
+              )}
+            </div>
+
+            {/* Дата окончания */}
+            <div className="form-group">
+              <label>Дата окончания</label>
+              <input 
+                type="month" 
+                {...register(`experience.${index}.endDate`, {
+                  validate: {
+                    afterStart: (value, formValues) => {
+                      const start = formValues.experience?.[index]?.startDate;
+                      if (start && value && value < start) {
+                        return 'Не может быть раньше даты начала';
+                      }
+                      return true;
+                    }
+                  }
+                })}
+                className={errors.experience?.[index]?.endDate ? 'error-input' : ''}
+              />
+              {errors.experience?.[index]?.endDate && (
+                <span className="error">{errors.experience[index].endDate.message}</span>
+              )}
+            </div>
+            
+            <div className="form-group full-width">
+              <label>Описание обязанностей</label>
+              <textarea 
+                rows="3" 
+                {...register(`experience.${index}.description`, { maxLength: { value: 1000, message: 'Не более 1000 символов' } })}
+                className={errors.experience?.[index]?.description ? 'error-input' : ''}
+              />
+              {errors.experience?.[index]?.description && <span className="error">{errors.experience[index].description.message}</span>}
+            </div>
+          </div>
+          {expFields.length > 1 && (
+            <button type="button" onClick={() => removeExp(index)} className="btn-remove">
+              <i className="fas fa-trash"></i> Удалить
+            </button>
+          )}
+        </div>
+      ))}
+      <button type="button" onClick={() => addExp({})} className="btn-add">
+        <i className="fas fa-plus"></i> Добавить опыт
+      </button>
+    </>
+  ) : (
+    /* 🔥 Placeholder, когда опыта нет */
+    <div style={{ 
+      background: '#f8fafc', 
+      padding: '20px', 
+      borderRadius: '12px', 
+      textAlign: 'center',
+      border: '2px dashed #cbd5e1',
+      color: '#64748b'
+    }}>
+      <p style={{ margin: 0, fontSize: '15px' }}>
+        ✅ Опыт работы не указан. В резюме этот раздел будет скрыт.
+      </p>
+      <p style={{ margin: '8px 0 0', fontSize: '13px' }}>
+        💡 Совет: можно указать практику, стажировку или волонтёрский опыт
+      </p>
+    </div>
   )}
-</div>
-                        <div className="form-group full-width">
-                          <label>Описание обязанностей</label>
-                          <textarea rows="3" {...register(`experience.${index}.description`)}></textarea>
-                        </div>
-                      </div>
-                      {expFields.length > 1 && (
-                        <button type="button" onClick={() => removeExp(index)} className="btn-remove">
-                          <i className="fas fa-trash"></i> Удалить
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                  <button type="button" onClick={() => addExp({})} className="btn-add">
-                    <i className="fas fa-plus"></i> Добавить опыт
-                  </button>
-                </section>
+</section>
 
-                {/* Образование */}
-                <section className="form-section">
-                  <h2>Образование</h2>
-                  {eduFields.map((field, index) => (
-                    <div key={field.id} className="dynamic-field">
-                      <div className="form-grid">
-                        <div className="form-group">
-                          <label>Учебное заведение</label>
-                          <input {...register(`education.${index}.institution`)} />
-                        </div>
-                        <div className="form-group">
-                          <label>Степень/Специальность</label>
-                          <input {...register(`education.${index}.degree`)} />
-                        </div>
-                        <div className="form-group">
-                          <label>Год окончания</label>
-                          <input {...register(`education.${index}.year`)} />
-                        </div>
-                        <div className="form-group full-width">
-                          <label>Описание</label>
-                          <textarea rows="2" {...register(`education.${index}.description`)}></textarea>
-                        </div>
-                      </div>
-                      {eduFields.length > 1 && (
-                        <button type="button" onClick={() => removeEdu(index)} className="btn-remove">
-                          <i className="fas fa-trash"></i> Удалить
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                  <button type="button" onClick={() => addEdu({})} className="btn-add">
-                    <i className="fas fa-plus"></i> Добавить образование
-                  </button>
-                </section>
+{/* Образование */}
+<section className="form-section">
+  <h2>Образование</h2>
+  {eduFields.map((field, index) => (
+    <div key={field.id} className="dynamic-field">
+      <div className="form-grid">
+        <div className="form-group">
+          <label>Учебное заведение *</label>
+          <input 
+            {...register(`education.${index}.institution`, { 
+              required: 'Введите название учебного заведения' 
+            })}
+            className={errors.education?.[index]?.institution ? 'error-input' : ''}
+          />
+          {errors.education?.[index]?.institution && <span className="error">{errors.education[index].institution.message}</span>}
+        </div>
+        <div className="form-group">
+          <label>Степень/Специальность *</label>
+          <input 
+            {...register(`education.${index}.degree`, { 
+              required: 'Введите степень или специальность' 
+            })}
+            className={errors.education?.[index]?.degree ? 'error-input' : ''}
+          />
+          {errors.education?.[index]?.degree && <span className="error">{errors.education[index].degree.message}</span>}
+        </div>
+        <div className="form-group">
+          <label>Год окончания</label>
+          <input 
+            {...register(`education.${index}.year`, {
+              pattern: { value: /^\d{4}$/, message: 'Формат: 2024' },
+              maxLength: { value: 4, message: 'Только 4 цифры' }
+            })}
+            className={errors.education?.[index]?.year ? 'error-input' : ''}
+          />
+          {errors.education?.[index]?.year && <span className="error">{errors.education[index].year.message}</span>}
+        </div>
+        <div className="form-group full-width">
+          <label>Описание</label>
+          <textarea 
+            rows="2" 
+            {...register(`education.${index}.description`, {
+              maxLength: { value: 500, message: 'Не более 500 символов' }
+            })}
+            className={errors.education?.[index]?.description ? 'error-input' : ''}
+          />
+          {errors.education?.[index]?.description && <span className="error">{errors.education[index].description.message}</span>}
+        </div>
+      </div>
+      {eduFields.length > 1 && (
+        <button type="button" onClick={() => removeEdu(index)} className="btn-remove">
+          <i className="fas fa-trash"></i> Удалить
+        </button>
+      )}
+    </div>
+  ))}
+  <button type="button" onClick={() => addEdu({})} className="btn-add">
+    <i className="fas fa-plus"></i> Добавить образование
+  </button>
+</section>
 
-                {/* Навыки */}
-                <section className="form-section">
-                  <h2>Навыки</h2>
-                  <div className="skills-list">
-                    {skillFields.map((field, index) => (
-                      <div key={field.id} className="skill-item">
-                        <input {...register(`skills.${index}.name`)} placeholder="Навык" />
-                        <button type="button" onClick={() => removeSkill(index)} className="btn-sm btn-danger">
-                          <i className="fas fa-times"></i>
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                  <button type="button" onClick={() => addSkill({})} className="btn-add">
-                    <i className="fas fa-plus"></i> Добавить навык
-                  </button>
-                </section>
+{/* Навыки */}
+<section className="form-section">
+  <h2>Навыки</h2>
+  <div className="skills-list">
+    {skillFields.map((field, index) => (
+      <div key={field.id} className="skill-item">
+        <input 
+          {...register(`skills.${index}.name`, {
+            required: index === 0 ? 'Добавьте хотя бы один навык' : false,
+            maxLength: { value: 50, message: 'Не более 50 символов' }
+          })}
+          placeholder="Навык"
+          className={errors.skills?.[index]?.name ? 'error-input' : ''}
+        />
+        <button type="button" onClick={() => removeSkill(index)} className="btn-sm btn-danger">
+          <i className="fas fa-times"></i>
+        </button>
+        {errors.skills?.[index]?.name && <span className="error" style={{width:'100%', fontSize:'11px'}}>{errors.skills[index].name.message}</span>}
+      </div>
+    ))}
+  </div>
+  {errors.skills?.root && <span className="error" style={{display:'block', marginBottom:'10px'}}>{errors.skills.root.message}</span>}
+  <button type="button" onClick={() => addSkill({})} className="btn-add">
+    <i className="fas fa-plus"></i> Добавить навык
+  </button>
+</section>
 
                 {/* Дополнительные разделы */}
                 <section className="form-section">

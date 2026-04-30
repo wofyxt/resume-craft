@@ -10,6 +10,7 @@ import ResumeList from '../components/ResumeList';
 import ResumeShareManager from '../components/ResumeShareManager';
 import ReviewForm from '../components/ReviewForm';
 import FavoriteTemplates from '../components/FavoriteTemplates';
+import { useTheme } from '../context/ThemeContext';
 
 
 const Dashboard = () => {
@@ -33,6 +34,8 @@ const [editingReview, setEditingReview] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
   const [deleteError, setDeleteError] = useState('');
 const [isDeleting, setIsDeleting] = useState(false);
+const { darkMode, toggleDarkMode } = useTheme();
+
 
 // В компоненте Dashboard, с другими useState:
 const [showReviewForm, setShowReviewForm] = useState(false);
@@ -188,8 +191,8 @@ useEffect(() => {
         <div className="dashboard-header">
           <h1>Личный кабинет</h1>
           <div className="user-info">
-            <span>Привет, { user.username }!</span>
-            <button onClick={handleLogout} className="btn btn-outline">
+            <span className="user-span">Привет, { user.username }!</span>
+            <button onClick={handleLogout} className="btn btn-outline user-btn">
               Выйти
             </button>
           </div>
@@ -233,12 +236,12 @@ useEffect(() => {
                 >
                   <i className="fas fa-file-alt"></i> Мои резюме
                 </li>
-                <li 
-                  className={activeSection === 'settings' ? 'active' : ''}
-                  onClick={() => setActiveSection('settings')}
-                >
-                  <i className="fas fa-cog"></i> Настройки
-                </li>
+               <li 
+  className={activeSection === 'settings' ? 'active' : ''}
+  onClick={() => setActiveSection('settings')}
+>
+  <i className="fas fa-cog"></i> Настройки
+</li>
                 <li 
   className={activeSection === 'coverLetters' ? 'active' : ''}
   onClick={() => setActiveSection('coverLetters')}
@@ -449,11 +452,23 @@ useEffect(() => {
 
             {/* 🔹 СЕКЦИЯ НАСТРОЕК */}
             {activeSection === 'settings' && (
-              <div className="settings-section">
-                <h2>Настройки</h2>
-                <p>Функционал настроек будет добавлен позже.</p>
-              </div>
-            )}
+  <div className="settings-section">
+    <h2>Настройки</h2>
+    
+    <div className="settings-item">
+      <label className="switch-label">
+        <input 
+          type="checkbox" 
+          checked={darkMode} 
+          onChange={toggleDarkMode} 
+        />
+        <span>Включить тёмную тему</span>
+      </label>
+    </div>
+
+    <p className="settings-note">Настройки применяются мгновенно и сохраняются в браузере.</p>
+  </div>
+)}
 {/* После секции coverLetters, внутри main.main-content */}
 
 {activeSection === 'reviews' && (

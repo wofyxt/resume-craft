@@ -12,7 +12,7 @@ const TestimonialsSlider = () => {
       name: 'Игорь Васильев',
       role: 'Backend Developer, нашел работу за 3 недели',
       text: 'Как IT-специалист, я ценю удобство и функциональность. Этот сервис превзошел все мои ожидания. Особенно порадовала возможность экспорта в PDF без искажения форматирования. Благодаря ResumeCraft я нашел работу с зарплатой на 40% выше предыдущей.',
-      avatar: 'https://randomuser.me/api/portraits/men/54.jpg',
+      avatar: 'https://randomuser.me/api/portraits/men/40.jpg',
     },
     {
       name: 'Екатерина Соколова',

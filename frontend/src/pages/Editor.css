@@ -1370,3 +1370,14 @@
 .template-option button:active {
   transform: scale(0.95);
 }
+
+/* Чекбокс "Нет опыта" */
+input[type="checkbox"] {
+  accent-color: var(--highlight);
+  cursor: pointer;
+}
+
+input[type="checkbox"]:hover {
+  transform: scale(1.05);
+  transition: transform 0.1s;
+}

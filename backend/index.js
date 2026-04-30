@@ -890,16 +890,20 @@ app.get('/api/resumes', requireAuth, async (req, res) => {
 });
 
 // 📝 COVER LETTERS ROUTES
+// ✅ СТАЛО (правильно — content теперь возвращается):
 app.get('/api/cover-letters', requireAuth, async (req, res) => {
   try {
     const result = await pool.query(`
-      SELECT cl.id, cl.title, cl.resume_id, cl.updated_at, r.title as resume_title 
+      SELECT cl.id, cl.title, cl.content, cl.resume_id, cl.updated_at, r.title as resume_title 
       FROM cover_letters cl 
       LEFT JOIN resumes r ON cl.resume_id = r.id 
       WHERE cl.user_id = $1 
       ORDER BY cl.updated_at DESC`, [req.userId]);
     res.json(result.rows);
-  } catch (err) { res.status(500).json({ error: 'Ошибка загрузки писем' }); }
+  } catch (err) { 
+    console.error('Get cover letters error:', err);
+    res.status(500).json({ error: 'Ошибка загрузки писем' }); 
+  }
 });
 
 app.post('/api/cover-letters', requireAuth, async (req, res) => {
