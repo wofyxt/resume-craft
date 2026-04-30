@@ -18,7 +18,7 @@ const ResumePreview = ({ data, template }) => {
           <p>{personal.summary}</p>
         </div>
       )}
-      {experience?.length > 0 && (
+      {experience?.some(e => e.company || e.position) && (
         <div className="section">
           <h2>Опыт работы</h2>
           {experience.map((exp, idx) => (
@@ -79,7 +79,7 @@ const ResumePreview = ({ data, template }) => {
           <p>{personal.summary}</p>
         </div>
       )}
-      {experience?.length > 0 && (
+     {experience?.some(e => e.company || e.position) && (
         <div className="section">
           <h2>Work Experience</h2>
           {experience.map((exp, idx) => (
@@ -149,7 +149,7 @@ const ResumePreview = ({ data, template }) => {
           )}
         </div>
         <div className="right-column">
-          {experience?.length > 0 && (
+          {experience?.some(e => e.company || e.position) && (
             <div className="section">
               <h2>Опыт работы</h2>
               {experience.map((exp, idx) => (
@@ -204,7 +204,7 @@ const ResumePreview = ({ data, template }) => {
             <p>{personal.summary}</p>
           </div>
         )}
-        {experience?.length > 0 && (
+       {experience?.some(e => e.company || e.position) && (
           <div className="section">
             <h2>Опыт работы</h2>
             {experience.map((exp, idx) => (
@@ -280,7 +280,7 @@ const ResumePreview = ({ data, template }) => {
           )}
         </div>
         <div className="right-column">
-          {experience?.length > 0 && (
+         {experience?.some(e => e.company || e.position) && (
             <div className="section">
               <h2>Опыт работы</h2>
               {experience.map((exp, idx) => (
@@ -350,7 +350,7 @@ const ResumePreview = ({ data, template }) => {
           )}
         </div>
         <div className="right-column">
-          {experience?.length > 0 && (
+     {experience?.some(e => e.company || e.position) && (
             <div className="section">
               <h2>Опыт работы</h2>
               {experience.map((exp, idx) => (

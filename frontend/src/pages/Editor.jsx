@@ -488,12 +488,13 @@ const toggleFavorite = async (cssClass, e) => {
         type="checkbox"
         checked={noExperience}
         onChange={(e) => {
-          setNoExperience(e.target.checked);
-          // Если включаем "нет опыта" — очищаем поля
-          if (e.target.checked) {
-            setValue('experience', [{ company: '', position: '', startDate: '', endDate: '', description: '' }]);
-          }
-        }}
+  setNoExperience(e.target.checked);
+  if (e.target.checked) {
+    setValue('experience', []); // 🔥 Пустой массив, а не [{...}]
+  } else {
+    setValue('experience', [{ company: '', position: '', startDate: '', endDate: '', description: '' }]);
+  }
+}}
         style={{ width: '16px', height: '16px', cursor: 'pointer' }}
       />
       Нет опыта работы
