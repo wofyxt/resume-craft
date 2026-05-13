@@ -51,7 +51,7 @@ const TestimonialsSlider = () => {
                   <img src={t.avatar} alt={t.name} />
                 </div>
                 <p className="testimonial-text">{t.text}</p>
-                <div className="user-info">
+                <div className="user-info-s">
                   <h4>{t.name}</h4>
                   <p>{t.role}</p>
                 </div>

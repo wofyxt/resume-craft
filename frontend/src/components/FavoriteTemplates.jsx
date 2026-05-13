@@ -13,13 +13,25 @@ export default function FavoriteTemplates() {
       .finally(() => setLoading(false));
   }, []);
 
-  const handleRemove = async (templateId) => {
-    await fetch(`/api/favorites/${templateId}`, { 
+  const handleRemove = async (cssClass) => {
+  try {
+    const res = await fetch(`/api/favorites/${cssClass}`, { 
       method: 'DELETE', 
       credentials: 'include' 
     });
-    setFavorites(prev => prev.filter(f => f.id !== templateId));
-  };
+    
+    if (res.ok) {
+      // 🔥 Фильтруем по css_class, а не по id
+      setFavorites(prev => prev.filter(f => f.css_class !== cssClass));
+    } else {
+      const err = await res.json();
+      alert(err.error || 'Ошибка удаления');
+    }
+  } catch (err) {
+    console.error('Remove favorite error:', err);
+    alert('Ошибка удаления из избранного');
+  }
+};
 
   if (loading) return <p style={{ textAlign: 'center', padding: '20px' }}>Загрузка...</p>;
   if (favorites.length === 0) {
@@ -61,14 +73,14 @@ export default function FavoriteTemplates() {
               >
                 Использовать
               </button>
-              <button 
-                onClick={() => handleRemove(f.id)} 
-                className="btn-sm btn-danger" 
-                style={{ padding: '8px 10px' }}
-                title="Удалить из избранного"
-              >
-                🗑️
-              </button>
+             <button 
+  onClick={() => handleRemove(f.css_class)}  // 🔥 Было: f.id → Стало: f.css_class
+  className="btn-sm btn-danger" 
+  style={{ padding: '8px 10px' }}
+  title="Удалить из избранного"
+>
+  🗑️
+</button>
             </div>
           </div>
         ))}
